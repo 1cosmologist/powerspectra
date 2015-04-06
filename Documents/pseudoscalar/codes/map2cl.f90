@@ -13,10 +13,10 @@ PROGRAM map2Cl
     IMPLICIT none
      
     INTEGER(I4B) :: nlmax,nmmax,n_rings,n_rings_read,nmw8
-    INTEGER(KIND=I4B) :: ordering
+    INTEGER(KIND=I4B) :: ordering,IQU,read1,read2,ncl
     COMPLEX(KIND=DPC), DIMENSION(:,:,:), ALLOCATABLE :: alm1,alm2
     INTEGER(I4B) :: l_loop,ipnest,ipring,imap
-    REAL(KIND=DP), DIMENSION(:,:),   ALLOCATABLE :: map_in,map_out,cl_auto
+    REAL(KIND=DP), DIMENSION(:,:),   ALLOCATABLE :: dummy,map_in,map_out,cl_auto
     REAL(KIND=DP),     DIMENSION(:,:),   ALLOCATABLE :: w8ring_TQU,dw8
     REAL(KIND=DP),   DIMENSION(1:2) :: cos_theta_cut
     INTEGER(KIND=I4B) :: polar_fits,nmaps,nside_in,npix_in,npix_out,status
@@ -52,7 +52,9 @@ PROGRAM map2Cl
 
     handle = parse_init(parafile)
 
-    nside_out = parse_int (handle,'nside_out')
+    nside_out = parse_int(handle,'nside_out')
+    
+    IQU = parse_int(handle,'IQU')
   
     inMap = parse_string(handle,'inMap',filestatus = 'old')
 
@@ -84,17 +86,31 @@ PROGRAM map2Cl
     nmmax = nlmax
 
     npix_out = nside2npix(nside_out)
-
-    nmaps=3
-  
-    allocate(map_in(0:npix_in-1,1:nmaps),stat = status)
-    call assert_alloc(status, CODE, "map_in")
+    
+    if (IQU .eq. 1) then
+        ncl=1
+    else if (IQU .eq. 3) then
+        ncl=4
+    end if
+      
+    allocate(dummy(0:npix_in-1,1:nmaps),stat = status)
+    call assert_alloc(status, CODE, "dummy")
    
     write(*,*)"      "//code//"> Reading input FITS map "
-    call input_map(inMap, map_in(0:,1:nmaps), npix_in, nmaps, &
+    call input_map(inMap, dummy, npix_in, nmaps, &
     fmissval=fmissval, header=header_in)
     
-    allocate(map_out(0:npix_out-1,1:nmaps),stat = status)
+    allocate(map_in(0:npix_in-1,1:IQU),stat = status)
+    call assert_alloc(status, CODE, "map_in")
+    
+    do read1=0,npix_in-1
+        do read2=1,IQU
+            map_in(read1,read2)=dummy(read1,read2)
+        end do
+    end do
+    
+    
+    allocate(map_out(0:npix_out-1,1:IQU),stat = status)
     call assert_alloc(status, CODE, "map_out")
     
     if (nside_in .ne. nside_out) then
@@ -117,22 +133,22 @@ PROGRAM map2Cl
        
 !---------------------------get alm's of the input map--------------------------            
    
-    allocate(alm1(1:nmaps, 0:nlmax, 0:nmmax),stat = status)
+    allocate(alm1(1:IQU, 0:nlmax, 0:nmmax),stat = status)
     call assert_alloc(status, CODE, "alm1")
      
-    allocate(alm2(1:nmaps, 0:nlmax, 0:nmmax),stat = status)
+    allocate(alm2(1:IQU, 0:nlmax, 0:nmmax),stat = status)
     call assert_alloc(status, CODE, "alm2")
   
     alm1 = CMPLX(0.0e0_dp,0.0e0_dp)
     alm2 = CMPLX(0.0e0_dp,0.0e0_dp)
     
-    allocate(w8ring_TQU(1:2*nside_out,1:nmaps),stat = status)
+    allocate(w8ring_TQU(1:2*nside_out,1:IQU),stat = status)
     call assert_alloc(status,code,"w8ring_TQU")
 
-    allocate(dw8(1:2*nside_out,1:nmaps),stat = status)
+    allocate(dw8(1:2*nside_out,1:IQU),stat = status)
     call assert_alloc(status,code,"dw8")
 
-    allocate(cl_auto(0:nlmax,1:4))
+    allocate(cl_auto(0:nlmax,1:ncl))
     call assert_alloc(status, code,"cl_auto")
     dw8=0.0_dp
 
@@ -146,7 +162,7 @@ PROGRAM map2Cl
             call fatal_error(code)
         endif
         
-        nmw8 = min(nmw8, nmaps)
+        nmw8 = min(nmw8, IQU)
 
         write(*,*) "      "//code//"> Inputting Quadrature ring weights "
         call input_map(infile_w8, dw8, n_rings, nmw8, fmissval=0.0_dp)
@@ -171,6 +187,6 @@ PROGRAM map2Cl
         (real(l_loop,dp)*(real(l_loop,dp)+1.0_dp)/(2*PII))*cl_auto(l_loop,3)
     end do
     
-    deallocate(map_out,alm1,cl_auto)
+    deallocate(map_out,alm1,cl_auto,dummy)
     close(2)
 END PROGRAM map2Cl
